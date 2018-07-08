@@ -1,0 +1,405 @@
+---
+title: "What you want to know"
+output: word_document
+editor_options: 
+  chunk_output_type: console
+---
+Functions
+```{r}
+library(lattice)
+library(lmerTest)
+library(psych)
+library(emmeans)
+library(foreign)
+library(gmodels)
+library(ggplot2)
+library(car)
+library(reshape2)
+library(dplyr)
+library(hunspell)		
+library(stringr)	
+library(tm)
+library(rJava)
+library(qdap)		
+library(wordnet)	
+library(aods3)
+library(servr)
+library(wordcloud)
+library(ldatuning)
+library(topicmodels)
+library(proxy)
+library(LDAvis)
+library(tidytext)
+library(parallel)
+library(doParallel)
+library(svs)
+library(koRpus)
+library(stringi)
+library(qdapTools)
+library(ggrepel)
+setDict("C:/Program Files (x86)/WordNet/dict 3.0")	
+```
+
+Dictionary
+```{r}
+Dicts_v2d = read.csv("Final dict raw and cleaned 050818 manual.csv", stringsAsFactors = F)
+
+Dicts_v2 = dplyr::select(Dicts_v2d, -values)
+Dicts_v2pre = unique(Dicts_v2$values3)
+
+Dicts_v2_sum = Dicts_v2 %>%
+  dplyr::select(values3,contains("_dict")) %>%
+  group_by(values3) %>%
+  summarise_all(funs(sum(.,na.rm=T))) %>%
+  mutate_at(vars(contains("_dict")),funs(ifelse(.>=1,1,.)))
+
+Dicts_v2_sum2 = Dicts_v2 %>%
+  dplyr::select(values3,contains("_dir")) %>%
+  group_by(values3) %>%
+  summarise_all(funs(sum(.))) %>%
+  mutate_at(vars(contains("_dir")),funs(ifelse(.>=1,1,ifelse(.<=-1,-1,.))))
+
+Dicts_v2_mean = Dicts_v2 %>%
+  dplyr::select(values3,PosScore:NeuScore) %>%
+  group_by(values3) %>%
+  summarise_all(funs(mean(.,na.rm=T)))
+  
+Dicts_v2 = Reduce(function(x, y) merge(x, y, all=TRUE), list(Dicts_v2_sum, Dicts_v2_sum2, Dicts_v2_mean))
+
+```
+
+
+What you want to know 1
+```{r}
+
+
+
+whatknow = read.csv("C:\\Users\\Gandalf Nicolas\\Desktop\\R files\\What_do_you_want_to_know.csv", h=T)
+
+whatknowAnalysis = whatknow %>%
+  select(ID,Condition,Sociability,Morality,Agency,Competence,Status,Beliefs) %>%
+  melt(id.vars = c("ID", "Condition"),
+  variable.name = "Dimension", 
+  value.name = "Value")
+
+contrasts(whatknow$Condition) <- contr.sum 
+
+Resultswhatknow = lm(Sociability ~Condition + Age, data=whatknow)
+summary(Resultswhatknow)
+
+whatknowAnalysis$ID = as.factor(whatknowAnalysis$ID)
+contrasts(whatknowAnalysis$Dimension) <- contr.sum 
+
+
+describe(whatknow$Age) 
+CrossTable(whatknow$Race)
+CrossTable(whatknow$Gender)
+
+describe(whatknow$Sociability)
+describe(whatknow$Morality)
+describe(whatknow$Agency)
+describe(whatknow$Competence)
+describe(whatknow$Status)
+describe(whatknow$Beliefs)
+
+Resultswhatknow = lmer(Value ~Condition*Dimension + (1|ID), REML =T, data=whatknowAnalysis)
+summary(Resultswhatknow)
+Anova(Resultswhatknow, type =3, test ="F")
+
+Resultswhatknowlsm1 = lsmeans(Resultswhatknow, ~Condition*Dimension)
+
+Resultswhatknowlsm1df = as.data.frame(summary(Resultswhatknowlsm1))
+
+limits <- aes(ymax = Resultswhatknowlsm1df$lsmean + Resultswhatknowlsm1df$SE,
+              ymin = Resultswhatknowlsm1df$lsmean - Resultswhatknowlsm1df$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Resultswhatknowlsm1df, aes(Dimension, y=lsmean, fill = Condition))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+coord_cartesian(ylim=c(1,7))+
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=25))
+ 
+Resultswhatknowlsm2 = lsmeans(Resultswhatknow, ~Dimension)
+
+summary(Resultswhatknowlsm1)
+
+pairs(Resultswhatknowlsm1, by ="Dimension")
+pairs(Resultswhatknowlsm2)
+
+rbind(pairs(Resultswhatknowlsm1, by ="Dimension"),pairs(Resultswhatknowlsm2))
+
+t.test(Sociability ~ Condition, whatknow)
+t.test(Morality ~ Condition, whatknow)
+t.test(Agency ~ Condition, whatknow)
+t.test(Competence ~ Condition, whatknow)
+t.test(Status ~ Condition, whatknow)
+t.test(Beliefs ~ Condition, whatknow)
+
+cor.test(whatknow$Sociability,whatknow$Morality)
+cor.test(whatknow$Sociability,whatknow$Agency)
+cor.test(whatknow$Sociability,whatknow$Competence)
+cor.test(whatknow$Sociability,whatknow$Status)
+cor.test(whatknow$Sociability,whatknow$Beliefs)
+
+cor.test(whatknow$Morality,whatknow$Agency)
+cor.test(whatknow$Morality,whatknow$Competence)
+cor.test(whatknow$Morality,whatknow$Status)
+cor.test(whatknow$Morality,whatknow$Beliefs)
+
+cor.test(whatknow$Agency,whatknow$Competence)
+cor.test(whatknow$Agency,whatknow$Status)
+cor.test(whatknow$Agency,whatknow$Beliefs)
+
+cor.test(whatknow$Competence,whatknow$Status)
+cor.test(whatknow$Competence,whatknow$Beliefs)
+
+cor.test(whatknow$Status,whatknow$Beliefs)
+
+```
+
+What you want to know 2
+
+```{r}
+
+whatknow2 = read.csv("C:\\Users\\Gandalf Nicolas\\Desktop\\R files\\What_do_you_want_to_know_2.csv", h=T)
+
+empty_as_na <- function(x){
+    if("factor" %in% class(x)) x <- as.character(x) ## since ifelse wont work with factors
+    ifelse(as.character(x)!="", x, NA)
+}
+
+# Paste that ignores NAs - First sep is set to nothing, change if you want a comma or spaces
+paste3 <- function(...,sep="") {
+     L <- list(...)
+     L <- lapply(L,function(x) {x[is.na(x)] <- ""; x})
+     ret <-gsub(paste0("(^",sep,"|",sep,"$)"),"",
+                 gsub(paste0(sep,sep),sep,
+                      do.call(paste,c(L,list(sep=sep)))))
+     is.na(ret) <- ret==""
+     ret
+     }
+
+whatknow2 = whatknow2 %>%
+  mutate_each(funs(empty_as_na),race1:race5) %>%
+  mutate(Race = paste3(race1,race2,race3,race4,race5)) %>%
+  mutate(Race = ifelse(Race=="White","White",ifelse(Race=="Black","Black",ifelse(Race=="Hispanic","Hispanic",ifelse(Race=="Asian","Asian",ifelse(Race=="Other","Other","Multiracial"))))))
+
+
+describe(whatknow2$age) 
+CrossTable(whatknow2$Race)
+CrossTable(whatknow2$gender)
+
+#whatknow2[grep("^Code_[1-4]+", names(whatknow2))] == "Sociability" ###### The following code basically creates new columns by "COUNTIF" (sum) the response was, e.g., sociability, on the cells with the names "Code_1", "Code_2", "Code_3" and "Code_4". Does this for each row (1 indicates rows, 2 indicates columns on the second argument). 
+
+Sociability = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Sociability"))
+
+Competence = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Competence"))
+
+Agency = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Agency"))
+
+Beliefs = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Beliefs"))
+
+Morality = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Morality"))
+
+Status = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Status"))
+
+
+whatknow2 = cbind(whatknow2,Sociability,Competence,Agency,Beliefs,Morality,Status)
+
+
+whatknow2Analysis = whatknow2 %>%
+  select(ID,Condition,Sociability,Morality,Agency,Competence,Status,Beliefs) %>%
+  melt(id.vars = c("ID", "Condition"),
+  variable.name = "Dimension", 
+  value.name = "Value")
+
+contrasts(whatknow2Analysis$Dimension) <- contr.sum 
+
+mAll = glmer(Value ~ Condition*Dimension + (1|ID), family="poisson", whatknow2Analysis)
+summary(mAll)
+
+mAll2 = glmer.nb(Value ~ Condition*Dimension + (1|ID), whatknow2Analysis)
+summary(mAll2)
+
+Anova(mAll, Type=3)
+
+Resultswhatknow2lsm1 = lsmeans(mAll, ~Condition*Dimension, type="response")
+
+pairs(Resultswhatknow2lsm1, by ="Dimension")
+
+Resultswhatknow2lsm1df = as.data.frame(summary(Resultswhatknow2lsm1))
+
+limits <- aes(ymax = Resultswhatknow2lsm1df$rate + Resultswhatknow2lsm1df$SE,
+              ymin = Resultswhatknow2lsm1df$rate - Resultswhatknow2lsm1df$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Resultswhatknow2lsm1df, aes(Dimension, y=rate, fill = Condition))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=25))
+ 
+
+```
+
+
+What know 3
+```{r}
+
+whatknow3demo = read.csv("What_do_you_want_to_know_3x.csv", h=T) 
+
+describe(whatknow3demo$Age) 
+CrossTable(whatknow3demo$race)
+CrossTable(whatknow3demo$gender)
+
+whatknow3 = read.csv("whattoknow3.csv", h=T)
+
+whatknow3 = subset(whatknow3, is.na(exclude))
+
+whatknow3 = whatknow3 %>%
+  select(Id,Condition,Sociability,Morality,Agency,Ability,Status, Beliefs) %>%
+  group_by(Id,Condition) %>%
+  summarise_all(funs(sum(.,na.rm=T))) %>%
+  rowwise %>%
+  mutate(Warmth = mean(c(Sociability,Morality),na.rm=T), Competence =mean(c(Ability,Agency),na.rm=T))
+  
+
+whatknow3Analysis = whatknow3 %>%
+  select(Id,Condition,Sociability,Morality,Agency,Ability,Status, Beliefs) %>%
+  melt(id.vars = c("Id", "Condition"),
+  variable.name = "Dimension", 
+  value.name = "Value")
+
+Resultswhatknow3 = lmer(Value ~Condition*Dimension + (1|Id), REML =T, data=whatknow3Analysis)
+summary(Resultswhatknow3)
+Anova(Resultswhatknow3, type =3)
+
+Resultswhatknow3lsm1 = lsmeans(Resultswhatknow3, ~Condition*Dimension)
+pairs(Resultswhatknow3lsm1, by ="Dimension")
+
+Resultswhatknow3lsm1df = as.data.frame(summary(Resultswhatknow3lsm1))
+
+limits <- aes(ymax = Resultswhatknow3lsm1df$lsmean + Resultswhatknow3lsm1df$SE,
+              ymin = Resultswhatknow3lsm1df$lsmean - Resultswhatknow3lsm1df$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Resultswhatknow3lsm1df, aes(Dimension, y=lsmean, fill = Condition))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=20))
+
+#SubDims
+Resultswhatknow3dim = lmer(Value ~Dimension + (1|Id), data=whatknow3Analysis)
+summary(Resultswhatknow3dim)
+Anova(Resultswhatknow3dim, type =3)
+
+Resultswhatknow3lsm0 = lsmeans(Resultswhatknow3dim, ~Dimension)
+pairs(Resultswhatknow3lsm0)
+
+Resultswhatknow3lsm0df = as.data.frame(summary(Resultswhatknow3lsm0))
+
+limits <- aes(ymax = Resultswhatknow3lsm0df$lsmean + Resultswhatknow3lsm0df$SE,
+              ymin = Resultswhatknow3lsm0df$lsmean - Resultswhatknow3lsm0df$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Resultswhatknow3lsm0df, aes(Dimension, y=lsmean))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=20))
+
+############### Grouped
+whatknow3AnalysisX = whatknow3 %>%
+  select(Id,Condition,Warmth,Competence,Status, Beliefs) %>%
+  melt(id.vars = c("Id", "Condition"),
+  variable.name = "Dimension", 
+  value.name = "Value")
+
+Resultswhatknow3X = lmer(Value ~Condition*Dimension + (1|Id), data=whatknow3AnalysisX)
+summary(Resultswhatknow3X)
+Anova(Resultswhatknow3X, type =3)
+
+Resultswhatknow3lsm1X = lsmeans(Resultswhatknow3X, ~Condition*Dimension)
+pairs(Resultswhatknow3lsm1X, by ="Dimension")
+
+Resultswhatknow3lsm1dfX = as.data.frame(summary(Resultswhatknow3lsm1X))
+
+limits <- aes(ymax = Resultswhatknow3lsm1dfX$lsmean + Resultswhatknow3lsm1dfX$SE,
+              ymin = Resultswhatknow3lsm1dfX$lsmean - Resultswhatknow3lsm1dfX$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Resultswhatknow3lsm1dfX, aes(Dimension, y=lsmean, fill = Condition))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=20))
+
+#Dims
+Resultswhatknow3dimX = lmer(Value ~Dimension + (1|Id), data=whatknow3AnalysisX)
+summary(Resultswhatknow3dimX)
+Anova(Resultswhatknow3dimX, type =3)
+
+Resultswhatknow3lsm0X = lsmeans(Resultswhatknow3dimX, ~Dimension)
+pairs(Resultswhatknow3lsm0X)
+
+Resultswhatknow3lsm0dfX = as.data.frame(summary(Resultswhatknow3lsm0X))
+
+limits <- aes(ymax = Resultswhatknow3lsm0dfX$lsmean + Resultswhatknow3lsm0dfX$SE,
+              ymin = Resultswhatknow3lsm0dfX$lsmean - Resultswhatknow3lsm0dfX$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Resultswhatknow3lsm0dfX, aes(Dimension, y=lsmean))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=20))
+
+
+
+
+
+
+ggplot(whatknow3X.long, aes(variable, value, fill=Condition))+
+  coord_cartesian(ylim=c(1,7))+
+  geom_bar(stat="identity",position="dodge")+
+  xlab("Dimension")+ylab("Mean") +
+  theme(text = element_text(size=15))
+
+cor.test(whatknow3$Sociability,whatknow3$Moral)
+cor.test(whatknow3$Sociability,whatknow3$Agency)
+cor.test(whatknow3$Sociability,whatknow3$Competence)
+cor.test(whatknow3$Sociability,whatknow3$Status)
+cor.test(whatknow3$Sociability,whatknow3$Beliefs)
+
+cor.test(whatknow3$Moral,whatknow3$Agency)
+cor.test(whatknow3$Moral,whatknow3$Competence)
+cor.test(whatknow3$Moral,whatknow3$Status)
+cor.test(whatknow3$Moral,whatknow3$Beliefs)
+
+cor.test(whatknow3$Agency,whatknow3$Competence)
+cor.test(whatknow3$Agency,whatknow3$Status)
+cor.test(whatknow3$Agency,whatknow3$Beliefs)
+
+cor.test(whatknow3$Competence,whatknow3$Status)
+cor.test(whatknow3$Competence,whatknow3$Beliefs)
+
+cor.test(whatknow3$Status,whatknow3$Beliefs)
+
+
+```
+
+
+```{r}
+
+
+```
+
