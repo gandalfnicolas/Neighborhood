@@ -58,7 +58,7 @@ Dicts_v2_sum2 = Dicts_v2 %>%
   group_by(values3) %>%
   summarise_all(funs(sum(.))) %>%
   mutate_at(vars(contains("_dir")),funs(ifelse(.>=1,1,ifelse(.<=-1,-1,.))))
-
+c
 Dicts_v2_mean = Dicts_v2 %>%
   dplyr::select(values3,PosScore:NeuScore) %>%
   group_by(values3) %>%
