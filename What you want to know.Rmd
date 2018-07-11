@@ -37,7 +37,119 @@ library(koRpus)
 library(stringi)
 library(qdapTools)
 library(ggrepel)
+library(glm)
+library(glmmADMB)
 setDict("C:/Program Files (x86)/WordNet/dict 3.0")	
+
+
+#####
+clean1 = function(word){		#NAs responses with >2 words, and diverese forms of non-response. Some of these can be examined in different analysis for lack of knowledge.
+if(word == "" | word == "N	A" | word == "NA" |	word == " " | word =="#N/A" | word == "n/a" | word == 'N/A' | word == 'na' | word == 'an' | word == 'no' | word == 'idk' | word == "nas" | word =="dont know" | word == "don't know"| word == "?"){return(NA)} else return(word)}
+
+clean2 = function(word){		
+cleaned = gsub(" ","",word,fixed = T)		
+cleaned = gsub("-","",cleaned,fixed = T)		
+cleaned = gsub("'","",cleaned,fixed = T)		
+cleaned = gsub('"',"",cleaned,fixed = T)
+cleaned = gsub(',',"",cleaned,fixed = T)
+cleaned = gsub('/',"",cleaned,fixed = T)
+cleaned = gsub('#',"",cleaned,fixed = T)
+cleaned = gsub('?',"",cleaned,fixed = T)
+cleaned = gsub('.',"",cleaned,fixed = T)
+cleaned = gsub('%',"",cleaned,fixed = T)
+cleaned = gsub('$',"",cleaned,fixed = T)
+cleaned = gsub(';',"",cleaned,fixed = T)
+cleaned = gsub(':',"",cleaned,fixed = T)
+cleaned = gsub('(',"",cleaned,fixed = T)
+cleaned = gsub(')',"",cleaned,fixed = T)
+cleaned = gsub('&',"",cleaned,fixed = T)
+cleaned = gsub('`',"",cleaned,fixed = T)
+return(cleaned)		
+}		
+
+Lemmatize = function(word){
+  print(word)
+  lemmax = treetag(as.character(word), treetagger="manual", format="obj", TT.tknz=FALSE , lang="en", TT.options=list(path="C:\\treetagger", preset="en"))
+  if(lemmax@TT.res[["lemma"]] == "<unknown>"){
+    return (lemmax@TT.res[["token"]])} 
+  else
+  return(lemmax@TT.res[["lemma"]])
+}
+
+delS = function(word){
+  isS = stri_sub(word,-1,-1)
+  return(ifelse(isS == "s" | isS == "S", stri_sub(word,1,-2),word))
+}
+
+
+# Check for errors in output
+Spellcheck = function(raw, cleaned, dict_cleaned, rawlist, toreturn=raw, changed = 0){
+  tryCatch({
+    print(raw)
+  if(cleaned %in% dict_cleaned){
+    print(paste0("IN DICT:",cleaned))
+    return(cleaned)}
+  if(grepl(" ", raw)|grepl("-", raw)){ #If not in the dictionary, don't attempt to correct words with spaces or dash  because it will likely provide wrong correction (probably because words is not incorrect to begin with). Return original. 
+    print(paste0("Has Space or -:",raw))
+    return(raw)
+  }
+  if(raw == 'NA'| is.na(raw)){ #Returns character na to code into appropriate dictionary (lack of knowledge), based on cleaned1.
+    print(paste0("NA"))
+    return('na')
+  }
+    filter <- getTermFilter("ExactMatchFilter", raw, TRUE)
+    if(is.null(getIndexTerms("NOUN", 5, filter)) &
+       is.null(getIndexTerms("ADJECTIVE",	5, filter)) &
+       is.null(getIndexTerms("VERB", 5, filter))){
+      suggestions = hunspell_suggest(raw)		
+      for(s in suggestions[[1]][1:5]){
+        if(is.na(s)) { # if fewer than 5 suggestions, it gives na, so break. 
+          break}
+        else if(s == raw){
+          toreturn = s
+          changed = 1
+          break}
+        else if(s %in% rawlist){
+          toreturn = s
+          changed = 1
+          break}}
+      if(changed == 0) {
+        toreturn = suggestions[[1]][1]}}
+    else {
+      print(paste0("CORRECT BUT NOT ON DICT:",cleaned))
+      return(cleaned)}
+    toreturn = clean1(toreturn)
+    toreturn = trimws(toreturn)
+    toreturn = tolower(toreturn)
+    toreturn = clean2(toreturn)
+    toreturn = Lemmatize(toreturn)
+    toreturn = delS(toreturn)
+    print(paste0("INCORRECT & NOT IN DICT:",toreturn))
+    return(toreturn)},
+    error = function(s){
+      print(paste("MY_ERROR:  ",s))
+      return('*******ERROR')})}
+
+
+###
+
+
+empty_as_na <- function(x){
+    if("factor" %in% class(x)) x <- as.character(x) ## since ifelse wont work with factors
+    ifelse(as.character(x)!="", x, NA)
+}
+
+# Paste that ignores NAs - First sep is set to nothing, change if you want a comma or spaces
+paste3 <- function(...,sep="") {
+     L <- list(...)
+     L <- lapply(L,function(x) {x[is.na(x)] <- ""; x})
+     ret <-gsub(paste0("(^",sep,"|",sep,"$)"),"",
+                 gsub(paste0(sep,sep),sep,
+                      do.call(paste,c(L,list(sep=sep)))))
+     is.na(ret) <- ret==""
+     ret
+     }
+
 ```
 
 Dictionary
@@ -58,7 +170,7 @@ Dicts_v2_sum2 = Dicts_v2 %>%
   group_by(values3) %>%
   summarise_all(funs(sum(.))) %>%
   mutate_at(vars(contains("_dir")),funs(ifelse(.>=1,1,ifelse(.<=-1,-1,.))))
-c
+
 Dicts_v2_mean = Dicts_v2 %>%
   dplyr::select(values3,PosScore:NeuScore) %>%
   group_by(values3) %>%
@@ -82,13 +194,11 @@ whatknowAnalysis = whatknow %>%
   variable.name = "Dimension", 
   value.name = "Value")
 
-contrasts(whatknow$Condition) <- contr.sum 
 
 Resultswhatknow = lm(Sociability ~Condition + Age, data=whatknow)
 summary(Resultswhatknow)
 
 whatknowAnalysis$ID = as.factor(whatknowAnalysis$ID)
-contrasts(whatknowAnalysis$Dimension) <- contr.sum 
 
 
 describe(whatknow$Age) 
@@ -164,23 +274,36 @@ What you want to know 2
 
 ```{r}
 
-whatknow2 = read.csv("C:\\Users\\Gandalf Nicolas\\Desktop\\R files\\What_do_you_want_to_know_2.csv", h=T)
+whatknow2 = read.csv("What_do_you_want_to_know_2.csv", h=T)
 
-empty_as_na <- function(x){
-    if("factor" %in% class(x)) x <- as.character(x) ## since ifelse wont work with factors
-    ifelse(as.character(x)!="", x, NA)
-}
+whatknow2 = reshape(whatknow2, idvar = c("ID"), varying = c(13:20),  direction='long', sep	= "_")
 
-# Paste that ignores NAs - First sep is set to nothing, change if you want a comma or spaces
-paste3 <- function(...,sep="") {
-     L <- list(...)
-     L <- lapply(L,function(x) {x[is.na(x)] <- ""; x})
-     ret <-gsub(paste0("(^",sep,"|",sep,"$)"),"",
-                 gsub(paste0(sep,sep),sep,
-                      do.call(paste,c(L,list(sep=sep)))))
-     is.na(ret) <- ret==""
-     ret
-     }
+datauniquepreWK2 = unique(whatknow2$Response)
+datauniqueWK2 = data.frame(values = datauniquepreWK2, stringsAsFactors = F)
+
+
+datauniqueWK2$ind1 = sapply(datauniqueWK2$values,clean1)		
+datauniqueWK2$ind1 = sapply(datauniqueWK2$ind1,trimws) #removes whitespace	
+datauniqueWK2$ind1 = sapply(datauniqueWK2$ind1,tolower)
+
+datauniqueWK2$ind2 = sapply(datauniqueWK2$ind1,clean2)
+
+datauniqueWK2$ind3 = sapply(datauniqueWK2$ind2,Lemmatize) #
+
+datauniqueWK2$ind4 = sapply(datauniqueWK2$ind3,delS)
+
+datauniqueWK2$ind5 = mapply(Spellcheck,raw = datauniqueWK2$ind1, cleaned = datauniqueWK2$ind4, MoreArgs = list(rawlist = datauniqueWK2$ind1, dict_cleaned= Dicts_v2pre)) #CHECK FOR ERRORS IN OUTPUT
+
+datauniqueWK2$ind5 = as.character(datauniqueWK2$ind5)
+datauniqueWK2$ind5 = sapply(datauniqueWK2$ind5,tolower)
+
+datauniqueWK2_2 = datauniqueWK2[-c(2:5)] #delete all but value and ind5
+#########
+
+whatknow2$t_p <- lookup(whatknow2$Response, datauniqueWK2_2)
+
+whatknow2$t_p <- ifelse(str_count(whatknow2$Response,"\\S+") > 2 | grepl("^[0-9]$", whatknow2$Response) | grepl('*******error', whatknow2$t_p,fixed = T) == T,NA,whatknow2$t_p)
+
 
 whatknow2 = whatknow2 %>%
   mutate_each(funs(empty_as_na),race1:race5) %>%
@@ -188,61 +311,384 @@ whatknow2 = whatknow2 %>%
   mutate(Race = ifelse(Race=="White","White",ifelse(Race=="Black","Black",ifelse(Race=="Hispanic","Hispanic",ifelse(Race=="Asian","Asian",ifelse(Race=="Other","Other","Multiracial"))))))
 
 
-describe(whatknow2$age) 
+psych::describe(whatknow2$age) 
 CrossTable(whatknow2$Race)
 CrossTable(whatknow2$gender)
 
 #whatknow2[grep("^Code_[1-4]+", names(whatknow2))] == "Sociability" ###### The following code basically creates new columns by "COUNTIF" (sum) the response was, e.g., sociability, on the cells with the names "Code_1", "Code_2", "Code_3" and "Code_4". Does this for each row (1 indicates rows, 2 indicates columns on the second argument). 
 
-Sociability = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Sociability"))
-
-Competence = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Competence"))
-
-Agency = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Agency"))
-
-Beliefs = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Beliefs"))
-
-Morality = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Morality"))
-
-Status = apply(whatknow2[grep("^Code_[1-4]+", names(whatknow2))], 1, function(x)sum(x == "Status"))
+whatknow2 = whatknow2 %>%
+  dcast(ID+time~Code,value.var = 'Code') %>%
+  mutate_at(vars(Ability:Status),funs(ifelse(is.na(.),0,1))) %>%
+  right_join(whatknow2)
 
 
-whatknow2 = cbind(whatknow2,Sociability,Competence,Agency,Beliefs,Morality,Status)
+#Use this if instructions asked for no more than 2 words. Responses >2 words are then coded as NA
+whatknow2 = whatknow2 %>%
+  left_join(Dicts_v2, by = c("t_p" = "values3")) %>%
+  mutate_at(vars(contains("_dict")),funs(ifelse(is.na(.) & !(is.na(t_p)),0,.)))
+#
+whatknow2 = whatknow2 %>%
+  dplyr::mutate(
+    Warmth_dict = ifelse(Sociability_dict + Morality_dict  == 0, 0, 1),
+    Competence_dict = ifelse(Ability_dict + Agency_dict == 0, 0, 1),
+    Competence_dict_ABC = ifelse(Agency_dict + Status_dict == 0, 0, 1),
+    Beliefs_dict = ifelse(Religion_dict + beliefsother_dict + Politics_dict == 0, 0, 1),
+    Beliefs_dict_ABC = ifelse(Religion_dict + beliefsother_dict + Politics_dict + stem_dict == 0, 0, 1),
+    Geography_dict = ifelse(inhabitant_dict + country_dict == 0, 0, 1),
+    Appearance_dict = ifelse(clothing_dict + bodprop_dict + bodpart_dict + skin_dict + bodcov_dict + beauty_dict == 0, 0, 1)
+    )
+
+#
+whatknow2 = whatknow2 %>%
+  rowwise %>%
+  dplyr::mutate(
+    Warmth_dir = mean(c(Sociability_dir,Morality_dir), na.rm = T),
+    Competence_dir = mean(c(Ability_dir , Agency_dir), na.rm = T),
+    Competence_dir_ABC = mean(c(Agency_dir , Status_dir), na.rm = T),
+    Beliefs_dir = mean(c(Religion_dir , beliefsother_dir_dummy, Politics_dir) , na.rm = T),
+    Beliefs_dir_ABC = mean(c(Religion_dir , beliefsother_dir_dummy , Politics_dir , stem_dir_beliefsabc_dummy), na.rm = T)
+    )
+#
+
+#Valence
+
+SENT_dict = read.csv("SENT_dict.csv", h=T, stringsAsFactors = F)
+
+cor(SENT_dict[3:7], use ="pairwise.complete.obs") #always use pairwise complete obs
+
+SENT_dictv1 = SENT_dict[,-c(8,9,10)]
+
+SENT_dictv2 = SENT_dict %>%
+  dplyr::select(word = word4,Val_bing2=Val_bing,Val_NRC2=Val_NRC,Val_afinn2=Val_afinn,Val_loughran2 =Val_loughran,Val_sentiwn2 =Val_sentiwn)%>%
+  group_by(word)%>%
+  summarize_all(funs(mean(.,na.rm=T))) 
+  
+whatknow2$tv = sapply(whatknow2$Response, tolower)
+whatknow2$tv = sapply(whatknow2$tv, trimws)
+
+whatknow2 = merge(x = whatknow2, y =SENT_dictv1, by.x = "tv",by.y = "word", all.x = TRUE) #Find first if there is a match with original response - different lemmas (next code) might have different sentiment, so this is ideal
+whatknow2 = merge(x = whatknow2, y = SENT_dictv2, by.x = "t_p",by.y = "word", all.x = TRUE)
+
+##
+
+whatknow2$NONE = as.numeric(!(as.matrix(whatknow2$t_p) %in% as.matrix(Dicts_v2pre)))
+
+whatknow2$NONE2 = ifelse(is.na(whatknow2$t_p),NA,as.numeric(!(as.matrix(whatknow2$t_p) %in% as.matrix(Dicts_v2pre))))
 
 
-whatknow2Analysis = whatknow2 %>%
-  select(ID,Condition,Sociability,Morality,Agency,Competence,Status,Beliefs) %>%
+is.nan.data.frame <- function(x) do.call(cbind, lapply(x, is.nan))
+
+whatknow2[is.nan(whatknow2)] <- NA
+
+#Average the different valence scores. If a SWN score is available for the correct sense, then average that with other valence scores, if not, then check if version one of the valence scores means is na, if so, get the average of the second versions, if not get the average of the first versions.
+
+whatknow2 = whatknow2 %>% 
+  mutate(Val_SWN = PosScore - NegScore) 
+
+whatknow2 = whatknow2 %>% 
+  mutate(Val = ifelse(!(is.na(Val_SWN)),
+                      rowMeans(dplyr::select(whatknow2,Val_SWN,Val_bing,Val_NRC,Val_afinn,Val_loughran), na.rm = T), 
+                      ifelse(is.na(rowMeans(dplyr::select(whatknow2,Val_bing,Val_NRC,Val_afinn,Val_loughran,Val_sentiwn), na.rm = T)),
+                             rowMeans(dplyr::select(whatknow2,Val_bing2,Val_NRC2,Val_afinn2,Val_loughran2,Val_sentiwn2), na.rm = T), 
+                        rowMeans(dplyr::select(whatknow2,Val_bing,Val_NRC,Val_afinn,Val_loughran,Val_sentiwn), na.rm = T))))
+
+whatknow2 = whatknow2 %>%
+  mutate(Warmth = Morality + Sociability, Competence = Ability + Agency)
+
+whatknow2[is.nan(whatknow2)] <- NA
+
+
+#To aggregate:
+
+whatknow2_sum = whatknow2 %>%
+  dplyr::select(ID,Ability:Status,Sociability_dict:fortune_dict,Warmth_dict:Appearance_dict,NONE:NONE2,Warmth,Competence) %>%
+  group_by(ID) %>%
+  summarise_all(funs(sum(.,na.rm=T)))
+
+whatknow2_avg = whatknow2 %>%
+  dplyr::select(ID,PosScore:NeuScore,Val_bing:Val_sentiwn2,Val_SWN,Val,Sociability_dir:art_dir_dummy,Warmth_dir:Beliefs_dir_ABC) %>%
+  group_by(ID) %>%
+  summarise_all(funs(mean(., na.rm =T)))
+
+whatknow2_same = whatknow2 %>%
+  dplyr::select(ID,Condition,age,exclude,gender,MturkID,Race) %>%
+  dplyr::distinct(.)
+  
+whatknow2AGG = plyr::join_all(list(whatknow2_same,whatknow2_avg,whatknow2_sum), by=c("ID"), type='left')
+
+whatknow2AGG[is.nan(whatknow2AGG)] <- NA
+
+##############
+1 - sum(whatknow2$NONE)/(length(whatknow2$NONE)) #How much of total data accounted for; change last number to number of responses - 70.1%
+
+1 - sum(whatknow2$NONE2,na.rm=T)/(length(na.omit(whatknow2$NONE2))) # 78.3%
+
+Tot = subset(whatknow2, select = t_p)		
+Tot = data.frame(lapply(Tot, as.character), stringsAsFactors=FALSE)		
+nonUniqueTot = stack(Tot)$values		
+unique_Tot = unique(stack(Tot)$values)		
+sum(unique_Tot %in% Dicts_v2pre)/length(unique_Tot) #How much of unique responses accou	nted	for, #69.7%
+
+unaccounted = subset(unique_Tot, !(unique_Tot %in% Dicts_v2pre))
+sumUnaccounted = sapply(unaccounted, function(x) length(which(nonUniqueTot==x)) )
+unaccounted = cbind(unaccounted,sumUnaccounted)
+write.csv(unaccounted, "unaccounted Neighborhood 2.csv")
+
+################################RESULTS#
+
+##CODED
+
+whatknow2Analysis = whatknow2AGG %>%
+  dplyr::select(ID,Condition,Sociability,Morality,Agency,Ability,Status,Beliefs) %>%
   melt(id.vars = c("ID", "Condition"),
   variable.name = "Dimension", 
   value.name = "Value")
 
-contrasts(whatknow2Analysis$Dimension) <- contr.sum 
+whatknow2Analysis$ID = as.factor(whatknow2Analysis$ID)
 
-mAll = glmer(Value ~ Condition*Dimension + (1|ID), family="poisson", whatknow2Analysis)
-summary(mAll)
+#Subdimensions
+#mAll0 = glmer(Value ~ Dimension + (1|ID), family="poisson", whatknow2Analysis)
+#summary(mAll)
+#gof(mAll0)
 
-mAll2 = glmer.nb(Value ~ Condition*Dimension + (1|ID), whatknow2Analysis)
-summary(mAll2)
+psych::describeBy(whatknow2AGG,whatknow2AGG$Condition)
 
-Anova(mAll, Type=3)
+mAll0_2 = glmer.nb(Value ~ Dimension + (1|ID), whatknow2Analysis)
+summary(mAll0_2)
 
-Resultswhatknow2lsm1 = lsmeans(mAll, ~Condition*Dimension, type="response")
+Anova(mAll0_2, Type=3)
+
+Resultswhatknow2lsm0 = lsmeans(mAll0_2, ~Dimension, type="response")
+
+pairs(Resultswhatknow2lsm0)
+
+Resultswhatknow2lsm0df = as.data.frame(summary(Resultswhatknow2lsm0))
+
+limits <- aes(ymax = Resultswhatknow2lsm0df$response + Resultswhatknow2lsm0df$SE,
+              ymin = Resultswhatknow2lsm0df$response - Resultswhatknow2lsm0df$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Resultswhatknow2lsm0df, aes(Dimension, y=response))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=25))
+
+#Interaction
+#mAll = glmer(Value ~ Condition*Dimension + (1|ID), family="poisson", whatknow2Analysis)
+#summary(mAll)
+#gof(mAll)
+
+mALL2 = glmer.nb(Value ~ Condition*Dimension + (1|ID), whatknow2Analysis)
+summary(mALL2)
+
+# mAll3 = glmmadmb(Value ~ Condition*Dimension + (1|ID),family="nbinom", whatknow2Analysis)
+# summary(mAll3)
+# emmeans(mAll3, ~Condition*Dimension, type="response")
+
+Anova(mAll2, Type=3)
+
+Resultswhatknow2lsm1 = emmeans(mAll2, ~Condition*Dimension, type="response")
 
 pairs(Resultswhatknow2lsm1, by ="Dimension")
 
 Resultswhatknow2lsm1df = as.data.frame(summary(Resultswhatknow2lsm1))
 
-limits <- aes(ymax = Resultswhatknow2lsm1df$rate + Resultswhatknow2lsm1df$SE,
-              ymin = Resultswhatknow2lsm1df$rate - Resultswhatknow2lsm1df$SE)
+limits <- aes(ymax = Resultswhatknow2lsm1df$response + Resultswhatknow2lsm1df$SE,
+              ymin = Resultswhatknow2lsm1df$response - Resultswhatknow2lsm1df$SE)
 
 dodge <- position_dodge(width = 0.9)
 
-ggplot(Resultswhatknow2lsm1df, aes(Dimension, y=rate, fill = Condition))+
+ggplot(Resultswhatknow2lsm1df, aes(Dimension, y=response, fill = Condition))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=25))
+
+###Dictionary
+
+
+whatknow2AnalysisDICT = whatknow2AGG %>%
+  dplyr::select(ID,Condition,Sociability_dict,Morality_dict,Agency_dict,Ability_dict,Status_dict,Beliefs_dict) %>%
+  melt(id.vars = c("ID", "Condition"),
+  variable.name = "Dimension", 
+  value.name = "Value")
+
+whatknow2AnalysisDICT$ID = as.factor(whatknow2AnalysisDICT$ID)
+
+#Subdimensions
+mD0 = glmer(Value ~ Dimension + (1|ID), family="poisson", control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e6)),whatknow2AnalysisDICT)
+summary(mD0)
+gof(mD0)
+
+Anova(mD0, Type=3)
+
+Dwhatknow2lsm0 = lsmeans(mD0, ~Dimension, type="response")
+
+pairs(Dwhatknow2lsm0)
+
+Dwhatknow2lsm0df = as.data.frame(summary(Dwhatknow2lsm0))
+
+limits <- aes(ymax = Dwhatknow2lsm0df$rate + Dwhatknow2lsm0df$SE,
+              ymin = Dwhatknow2lsm0df$rate - Dwhatknow2lsm0df$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Dwhatknow2lsm0df, aes(Dimension, y=rate))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=25))
+
+#Interaction
+mD= glmer(Value ~ Condition*Dimension + (1|ID), family="poisson", control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e6)), whatknow2AnalysisDICT)
+summary(mD)
+gof(mD)
+
+Anova(mD, Type=3)
+
+Dwhatknow2lsm1 = emmeans(mD, ~Condition*Dimension, type="response")
+
+pairs(Dwhatknow2lsm1, by ="Dimension")
+
+Dwhatknow2lsm1df = as.data.frame(summary(Dwhatknow2lsm1))
+
+limits <- aes(ymax = Dwhatknow2lsm1df$rate + Dwhatknow2lsm1df$SE,
+              ymin = Dwhatknow2lsm1df$rate - Dwhatknow2lsm1df$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Dwhatknow2lsm1df, aes(Dimension, y=rate, fill = Condition))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=25))
+
+
+
+#####GROUPED##############
+whatknow2AnalysisX = whatknow2AGG %>%
+  dplyr::select(ID,Condition,Warmth,Competence,Status,Beliefs) %>%
+  melt(id.vars = c("ID", "Condition"),
+  variable.name = "Dimension", 
+  value.name = "Value")
+
+whatknow2AnalysisX$ID = as.factor(whatknow2AnalysisX$ID)
+
+#Dimensions
+mAll0X = glmer(Value ~ Dimension + (1|ID), family="poisson", whatknow2AnalysisX)
+summary(mAll)
+gof(mAll0X) #Use this as not very overdispersed (see very large dispersion parameter in mALL0_2X as additional evidence)
+
+#mAll0_2X = glmmadmb(Value ~ Dimension + (1|ID), family="nbinom",whatknow2AnalysisX)
+#summary(mAll0_2X)
+
+Anova(mAll0X, Type=3)
+
+Resultswhatknow2lsm0X = emmeans(mAll0X, ~Dimension, type="response")
+
+pairs(Resultswhatknow2lsm0X)
+
+Resultswhatknow2lsm0dfX = as.data.frame(summary(Resultswhatknow2lsm0X))
+
+limits <- aes(ymax = Resultswhatknow2lsm0dfX$rate + Resultswhatknow2lsm0dfX$SE,
+              ymin = Resultswhatknow2lsm0dfX$rate - Resultswhatknow2lsm0dfX$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Resultswhatknow2lsm0dfX, aes(Dimension, y=rate))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=25))
+
+#Interaction
+mAllX = glmer(Value ~ Condition*Dimension + (1|ID), family="poisson", whatknow2AnalysisX)
+summary(mAllX)
+gof(mAllX)
+
+Anova(mAllX, Type=3)
+
+Resultswhatknow2lsmX = lsmeans(mAllX, ~Condition*Dimension, type="response")
+
+pairs(Resultswhatknow2lsmX, by ="Dimension")
+
+Resultswhatknow2lsm1dfX = as.data.frame(summary(Resultswhatknow2lsmX))
+
+limits <- aes(ymax = Resultswhatknow2lsm1dfX$rate + Resultswhatknow2lsm1dfX$SE,
+              ymin = Resultswhatknow2lsm1dfX$rate - Resultswhatknow2lsm1dfX$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Resultswhatknow2lsm1dfX, aes(Dimension, y=rate, fill = Condition))+
 geom_bar(stat="identity",position="dodge")+
 geom_errorbar(limits, position = dodge, width = 0.25) +
 xlab("Dimension")+ylab("Mean") +
 theme(text = element_text(size=25))
  
+###Dictionary
+
+
+whatknow2AnalysisDICTX = whatknow2AGG %>%
+  dplyr::select(ID,Condition,Warmth_dict,Competence_dict,Status_dict,Beliefs_dict) %>%
+  melt(id.vars = c("ID", "Condition"),
+  variable.name = "Dimension", 
+  value.name = "Value")
+
+whatknow2AnalysisDICTX$ID = as.factor(whatknow2AnalysisDICTX$ID)
+
+#Subdimensions
+mD0dict = glmer(Value ~ Dimension + (1|ID), family="poisson", control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e6)),whatknow2AnalysisDICTX)
+summary(mD0dict)
+gof(mD0dict)
+
+Anova(mD0dict, Type=3)
+
+Dwhatknow2lsm0dict = lsmeans(mD0dict, ~Dimension, type="response")
+
+pairs(Dwhatknow2lsm0dict)
+
+Dwhatknow2lsm0dfdict = as.data.frame(summary(Dwhatknow2lsm0dict))
+
+limits <- aes(ymax = Dwhatknow2lsm0dfdict$rate + Dwhatknow2lsm0dfdict$SE,
+              ymin = Dwhatknow2lsm0dfdict$rate - Dwhatknow2lsm0dfdict$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Dwhatknow2lsm0dfdict, aes(Dimension, y=rate))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=25))
+
+#Interaction
+#mDX= glmer(Value ~ Condition*Dimension + (1|ID), family="poisson", whatknow2AnalysisDICTX)
+#summary(mDX) #doesnt converge
+#gof(mDX)
+
+mDX2 = glmmadmb(Value ~ Condition*Dimension + (1|ID), family="poisson", whatknow2AnalysisDICTX)
+summary(mDX2)
+
+Anova(mDX2, Type=3)
+
+Dwhatknow2lsmdictX = emmeans(mDX2, ~Condition*Dimension, type="response")
+
+pairs(Dwhatknow2lsmdictX, by ="Dimension")
+
+Dwhatknow2lsm1dfX = as.data.frame(summary(Dwhatknow2lsmdictX))
+
+limits <- aes(ymax = Dwhatknow2lsm1dfX$rate + Dwhatknow2lsm1dfX$SE,
+              ymin = Dwhatknow2lsm1dfX$rate - Dwhatknow2lsm1dfX$SE)
+
+dodge <- position_dodge(width = 0.9)
+
+ggplot(Dwhatknow2lsm1dfX, aes(Dimension, y=rate, fill = Condition))+
+geom_bar(stat="identity",position="dodge")+
+geom_errorbar(limits, position = dodge, width = 0.25) +
+xlab("Dimension")+ylab("Mean") +
+theme(text = element_text(size=25))
 
 ```
 
@@ -260,14 +706,164 @@ whatknow3 = read.csv("whattoknow3.csv", h=T)
 
 whatknow3 = subset(whatknow3, is.na(exclude))
 
-whatknow3 = whatknow3 %>%
-  select(Id,Condition,Sociability,Morality,Agency,Ability,Status, Beliefs) %>%
-  group_by(Id,Condition) %>%
-  summarise_all(funs(sum(.,na.rm=T))) %>%
-  rowwise %>%
-  mutate(Warmth = mean(c(Sociability,Morality),na.rm=T), Competence =mean(c(Ability,Agency),na.rm=T))
-  
+datauniquepreWK3 = unique(whatknow3$r)
+datauniqueWK3 = data.frame(values = datauniquepreWK3, stringsAsFactors = F)
 
+
+datauniqueWK3$ind1 = sapply(datauniqueWK3$values,clean1)		
+datauniqueWK3$ind1 = sapply(datauniqueWK3$ind1,trimws) #removes whitespace	
+datauniqueWK3$ind1 = sapply(datauniqueWK3$ind1,tolower)
+
+datauniqueWK3$ind2 = sapply(datauniqueWK3$ind1,clean2)
+
+datauniqueWK3$ind3 = sapply(datauniqueWK3$ind2,Lemmatize) #
+
+datauniqueWK3$ind4 = sapply(datauniqueWK3$ind3,delS)
+
+datauniqueWK3$ind5 = mapply(Spellcheck,raw = datauniqueWK3$ind1, cleaned = datauniqueWK3$ind4, MoreArgs = list(rawlist = datauniqueWK3$ind1, dict_cleaned= Dicts_v2pre)) #CHECK FOR ERRORS IN OUTPUT
+
+datauniqueWK3$ind5 = as.character(datauniqueWK3$ind5)
+datauniqueWK3$ind5 = sapply(datauniqueWK3$ind5,tolower)
+
+datauniqueWK3f = datauniqueWK3[-c(2:5)]
+
+whatknow3$t_p <- lookup(whatknow3$r, datauniqueWK3f)
+
+whatknow3$t_p <- ifelse(str_count(whatknow3$r,"\\S+") > 2 | grepl("^[0-9]$", whatknow3$r) | grepl('*******error', whatknow3$t_p,fixed = T) == T,NA,whatknow3$t_p)
+
+
+psych::describe(whatknow3$Age) 
+CrossTable(whatknow3$race)
+CrossTable(whatknow3$gender)
+
+
+#Use this if instructions asked for no more than 2 words. Responses >2 words are then coded as NA
+whatknow3 = whatknow3 %>%
+  left_join(Dicts_v2, by = c("t_p" = "values3")) %>%
+  mutate_at(vars(contains("_dict")),funs(ifelse(is.na(.) & !(is.na(t_p)),0,.)))
+#
+whatknow3 = whatknow3 %>%
+  dplyr::mutate(
+    Warmth_dict = ifelse(Sociability_dict + Morality_dict  == 0, 0, 1),
+    Competence_dict = ifelse(Ability_dict + Agency_dict == 0, 0, 1),
+    Competence_dict_ABC = ifelse(Agency_dict + Status_dict == 0, 0, 1),
+    Beliefs_dict = ifelse(Religion_dict + beliefsother_dict + Politics_dict == 0, 0, 1),
+    Beliefs_dict_ABC = ifelse(Religion_dict + beliefsother_dict + Politics_dict + stem_dict == 0, 0, 1),
+    Geography_dict = ifelse(inhabitant_dict + country_dict == 0, 0, 1),
+    Appearance_dict = ifelse(clothing_dict + bodprop_dict + bodpart_dict + skin_dict + bodcov_dict + beauty_dict == 0, 0, 1)
+    )
+
+#
+whatknow3 = whatknow3 %>%
+  rowwise %>%
+  dplyr::mutate(
+    Warmth_dir = mean(c(Sociability_dir,Morality_dir), na.rm = T),
+    Competence_dir = mean(c(Ability_dir , Agency_dir), na.rm = T),
+    Competence_dir_ABC = mean(c(Agency_dir , Status_dir), na.rm = T),
+    Beliefs_dir = mean(c(Religion_dir , beliefsother_dir_dummy, Politics_dir) , na.rm = T),
+    Beliefs_dir_ABC = mean(c(Religion_dir , beliefsother_dir_dummy , Politics_dir , stem_dir_beliefsabc_dummy), na.rm = T)
+    )
+#
+
+#Valence
+
+SENT_dict = read.csv("SENT_dict.csv", h=T, stringsAsFactors = F)
+
+cor(SENT_dict[3:7], use ="pairwise.complete.obs") #always use pairwise complete obs
+
+SENT_dictv1 = SENT_dict[,-c(8,9,10)]
+
+SENT_dictv2 = SENT_dict %>%
+  dplyr::select(word = word4,Val_bing2=Val_bing,Val_NRC2=Val_NRC,Val_afinn2=Val_afinn,Val_loughran2 =Val_loughran,Val_sentiwn2 =Val_sentiwn)%>%
+  group_by(word)%>%
+  summarize_all(funs(mean(.,na.rm=T))) 
+  
+whatknow3$tv = sapply(whatknow3$r, tolower)
+whatknow3$tv = sapply(whatknow3$tv, trimws)
+
+whatknow3 = merge(x = whatknow3, y =SENT_dictv1, by.x = "tv",by.y = "word", all.x = TRUE) #Find first if there is a match with original response - different lemmas (next code) might have different sentiment, so this is ideal
+whatknow3 = merge(x = whatknow3, y = SENT_dictv2, by.x = "t_p",by.y = "word", all.x = TRUE)
+
+##
+
+whatknow3$NONE = as.numeric(!(as.matrix(whatknow3$t_p) %in% as.matrix(Dicts_v2pre)))
+
+whatknow3$NONE2 = ifelse(is.na(whatknow3$t_p),NA,as.numeric(!(as.matrix(whatknow3$t_p) %in% as.matrix(Dicts_v2pre))))
+
+
+is.nan.data.frame <- function(x) do.call(cbind, lapply(x, is.nan))
+
+whatknow3[is.nan(whatknow3)] <- NA
+
+#Average the different valence scores. If a SWN score is available for the correct sense, then average that with other valence scores, if not, then check if version one of the valence scores means is na, if so, get the average of the second versions, if not get the average of the first versions.
+
+whatknow3 = whatknow3 %>% 
+  mutate(Val_SWN = PosScore - NegScore) 
+
+whatknow3 = whatknow3 %>% 
+  mutate(Val = ifelse(!(is.na(Val_SWN)),
+                      rowMeans(dplyr::select(whatknow3,Val_SWN,Val_bing,Val_NRC,Val_afinn,Val_loughran), na.rm = T), 
+                      ifelse(is.na(rowMeans(dplyr::select(whatknow3,Val_bing,Val_NRC,Val_afinn,Val_loughran,Val_sentiwn), na.rm = T)),
+                             rowMeans(dplyr::select(whatknow3,Val_bing2,Val_NRC2,Val_afinn2,Val_loughran2,Val_sentiwn2), na.rm = T), 
+                        rowMeans(dplyr::select(whatknow3,Val_bing,Val_NRC,Val_afinn,Val_loughran,Val_sentiwn), na.rm = T))))
+
+
+  mutate(Warmth = Morality + Sociability, Competence = Ability + Agency)
+  
+whatknow3 = whatknow3 %>%
+rowwise %>%
+mutate(Warmth = mean(c(Sociability,Morality),na.rm=T), Competence =mean(c(Ability,Agency),na.rm=T))
+
+whatknow3[is.nan(whatknow3)] <- NA
+
+
+#To aggregate:
+
+whatknow3_sum = whatknow3 %>%
+  dplyr::select(Id,Sociability_dict:fortune_dict,Warmth_dict:Appearance_dict,NONE:NONE2) %>%
+  group_by(Id) %>%
+  summarise_all(funs(sum(.,na.rm=T)))
+
+whatknow3_avg = whatknow3 %>%
+  dplyr::select(Id,PosScore:NeuScore,Val_bing:Val_sentiwn2,Val_SWN,Val,Sociability_dir:art_dir_dummy,Warmth_dir:Beliefs_dir_ABC,Sociability:Status,Warmth,Competence) %>%
+  group_by(Id) %>%
+  summarise_all(funs(mean(., na.rm =T)))
+
+whatknow3_same = whatknow3 %>%
+  dplyr::select(Id,Condition,why,Age,exclude,gender,race) %>%
+  dplyr::distinct(.)
+  
+whatknow3AGG = plyr::join_all(list(whatknow3_same,whatknow3_avg,whatknow3_sum), by=c("Id"), type='left')
+
+whatknow3AGG[is.nan(whatknow3AGG)] <- NA
+
+##############
+1 - sum(whatknow2$NONE)/(length(whatknow2$NONE)) #How much of total data accounted for; change last number to number of responses - 70.1%
+
+1 - sum(whatknow2$NONE2,na.rm=T)/(length(na.omit(whatknow2$NONE2))) # 78.3%
+
+Tot = subset(whatknow2, select = t_p)		
+Tot = data.frame(lapply(Tot, as.character), stringsAsFactors=FALSE)		
+nonUniqueTot = stack(Tot)$values		
+unique_Tot = unique(stack(Tot)$values)		
+sum(unique_Tot %in% Dicts_v2pre)/length(unique_Tot) #How much of unique responses accou	nted	for, #69.7%
+
+unaccounted = subset(unique_Tot, !(unique_Tot %in% Dicts_v2pre))
+sumUnaccounted = sapply(unaccounted, function(x) length(which(nonUniqueTot==x)) )
+unaccounted = cbind(unaccounted,sumUnaccounted)
+write.csv(unaccounted, "unaccounted Neighborhood 2.csv")
+
+# whatknow3 = whatknow3 %>%
+#   select(Id,Condition,Sociability,Morality,Agency,Ability,Status, Beliefs) %>%
+#   group_by(Id,Condition) %>%
+#   summarise_all(funs(sum(.,na.rm=T))) %>%
+#   rowwise %>%
+#   mutate(Warmth = mean(c(Sociability,Morality),na.rm=T), Competence =mean(c(Ability,Agency),na.rm=T))
+#   
+
+##################ANALYYSES####3
+
+#Subdimensions
 whatknow3Analysis = whatknow3 %>%
   select(Id,Condition,Sociability,Morality,Agency,Ability,Status, Beliefs) %>%
   melt(id.vars = c("Id", "Condition"),
